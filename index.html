@@ -1,0 +1,145 @@
+<html>
+    <style>
+        #canvas {
+            border: 1px solid black;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        #text {
+            position: fixed;
+        }
+    </style>
+    <body>
+        <div id="text">
+            <div id="iterations"></div>
+            <div id="bankroll"></div>
+            <div id="bet"></div>
+            <div id="increment"></div>
+        </div>
+        <canvas width="1920" height="1080" id="canvas"></canvas>
+    </body>
+
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        let iterations_elem = document.getElementById("iterations");
+        let bankroll_elem = document.getElementById("bankroll");
+        let bet_elem = document.getElementById("bet");
+        let increment_elem = document.getElementById("increment");
+
+        let data = {
+            mousedown: false, ctrl: false,
+            iterations: 5000, bankroll: 10000, bet: 500, increment: 1,
+        };
+
+
+        let integerHistogram = new Array(100);
+        for (let i = 0; i < 100; i++) {
+            integerHistogram[i] = 0;
+        }
+        let total_value = 0;
+        let num_plays = 0;
+        let max_value = 0;
+
+        // my worker is named worky lol
+        const worky = new Worker("worker.js");
+
+        worky.onmessage = e => {
+            const {iterations, bankroll, bet, increment} = e.data.params;
+            if (iterations !== data.iterations ||
+            bankroll !== data.bankroll ||
+            bet !== data.bet ||
+            increment !== data.increment) {
+                return;
+            }
+            for (let i = 0; i < e.data.results.length; i++) {
+                let result = e.data.results[i];
+                total_value += result;
+                if (result > 100_000) {
+                    result = 100_000;
+                }
+                let index = Math.round(result/1000);
+                integerHistogram[index] += 1;
+                if (integerHistogram[index] > max_value) {
+                    max_value = integerHistogram[index];
+                }
+            }
+            num_plays += e.data.results.length;
+            if (Math.random() < 0.0001) {
+                console.log(integerHistogram);
+                console.log(e.data.results);
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < 100; i++) {
+                ctx.fillStyle = `rgb(
+                    ${250 - (i*2.5)},
+                    ${i*2.5},
+                    0
+                )`
+                ctx.fillRect(i*15, 1000, 15, -(integerHistogram[i] * 500 / max_value));
+            }
+            // console.log("Drew", num_plays);
+        }
+
+        const update = () => {
+            // todo: only update if it's changed? I assume JS does this for me.
+            // TODO: format correctly (10,000, $500, etc.)
+            iterations_elem.textContent = "iterations " + data.iterations;
+            bankroll_elem.textContent = "bankroll " + data.bankroll;
+            bet_elem.textContent = "bet " + data.bet;
+            increment_elem.textContent = "increment " + data.increment;
+
+            worky.postMessage({
+                ...data,
+                mousedown: false,
+                ctrl: false
+            });
+            for (let i = 0; i < 100; i++) {
+                integerHistogram[i] = 0;
+            }
+            max_value = 0;
+            num_plays = 0;
+            total_value = 0;
+        }
+
+        document.onkeydown = event => {
+            data.ctrl = true;
+        }
+        document.onkeyup = event => {
+            data.ctrl = false;
+        }
+        canvas.onmousedown = event => {
+            data.mousedown = true;
+        }
+        canvas.onmouseup = event => {
+            data.mousedown = false;
+        }
+        canvas.onmousemove = event => {
+            if (data.mousedown) {
+                if (data.ctrl) {
+                    data.bet += event.movementX;
+                    if (data.bet < 0) {
+                        data.bet = 0;
+                    }
+                    let newIncrement = data.increment*20 + event.movementY;
+                    data.increment = newIncrement/20;
+                } else {
+                    data.iterations += event.movementX*10;
+                    if (data.iterations < 10) {
+                        data.iterations = 10;
+                    }
+                    data.bankroll += event.movementY*20;
+                    if (data.bankroll < 20) {
+                        data.bankroll = 20;
+                    }
+                }
+                update();
+            }
+        }
+
+        update();
+    </script>
+</html>
